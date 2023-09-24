@@ -431,8 +431,8 @@ class StageMLRegressor(StageML):
             self,
             X:pd.DataFrame,
             y:pd.DataFrame,
-            valid_sets:list,
             features:list,
+            valid_sets:list = None,
             sample_weight = None,
             model_name:str = "lgbm_model"):
         """Fits a LightGBM model on the input data.
@@ -440,7 +440,7 @@ class StageMLRegressor(StageML):
         Args:
             X (pd.DataFrame): Input features dataframe
             y (pd.DataFrame): Target dataframe
-            valid_sets (list): List of tuples (X_valid, y_valid) 
+            valid_sets (list): List of tuples (X_valid, y_valid,sample_weight,init_score) 
             features (list): List of feature names to use for training
             sample_weight (pd.DataFrame): Optional weight for each sample
             model_name (str): Name to use for the fitted model
