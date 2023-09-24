@@ -19,4 +19,5 @@ Currently models are only available for a subset of models
 
 - GLM (Generalized Linear Models from sklearn.linear_model)
 - GAM (Generalized Additive Models from interpretml ExplainableBoostingMachines)
+- GA2M (Generalized Additive Models with Pairwise Interactions (Fitting only the pairwise interactions) from interpretml ExplainableBoostingMachines)
 - GBM (Gradient Boosting Machines from lightGBM)
