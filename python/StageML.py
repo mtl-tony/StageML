@@ -139,6 +139,10 @@ class StageML:
     def _update_model_features(self,model_name,features):
         self.features[model_name] = features
         self.model_stages = self.model_stages + [model_name]
+
+    def _handle_train_valid_data(self,X_train, y_train, X_valid,y_valid):
+        pass
+
     @abstractmethod
     def fit_glm():
         pass
@@ -207,6 +211,22 @@ class StageMLRegressor(StageML):
         self._objective_handler()
 
     def _prepare_init_score(self,X):
+        """Prepares the initial score value for LightGBM model fitting.
+
+        Parameters:
+        X (pandas.DataFrame): The predictor/feature data for which initial 
+        scores will be computed.
+        
+        Returns: 
+        init_score (numpy.array): The initial score values to pass to the model fitting.
+        
+        This function calculates initial scores based on:
+        - If first model being fit, returns None 
+        - Else sums predictions from previous stage models
+        - Predicts on X from each previous stage model
+        - Sums predictions using self.link()
+        - Returns summed array as init_scores
+        """
         if len(self.models) == 0:
             init_score = None
         else:
@@ -217,6 +237,25 @@ class StageMLRegressor(StageML):
         return init_score
     
     def _prepare_fit(self,X,features,model_name):
+        """Performs validations and prepares init score before fitting model.
+
+        Args:
+            X (pd.DataFrame): Input features dataframe
+            features (list): List of feature names  
+            model_name (str): Name to use for the fitted model
+        
+        Returns:
+            model_name (str): Updated model name if needed
+            init_score (np.array): Initial score based on X, else None
+
+        This method:
+            - Validates X and features
+            - Computes an initial score if possible based on X 
+            - Checks that model_name is unique and updates it if needed
+
+        The init_score can be used by some models that support warm starts or 
+        using prior information during training.
+        """
         #Validate_Data
         self._validate_data(X,features)
         #Init Score
@@ -232,6 +271,24 @@ class StageMLRegressor(StageML):
             features:list,
             sample_weight = None,
             model_name:str = "glm_model"):
+        """Fits a Generalized Linear Model (GLM) on the input data X and target y.
+
+        Args:
+            X (pd.DataFrame): Input features dataframe 
+            y (pd.DataFrame): Target dataframe
+            features (list): List of feature names to use for training
+            sample_weight (pd.DataFrame): Optional weight for each sample
+            model_name (str): Name to use for the fitted model
+
+        Returns:
+            None: Fits a GLM pipeline internally and stores it in self.models
+
+        The feature columns are preprocessed using a ColumnTransformer to handle numeric and
+        categorical features. A linear model is fitted on the processed features.
+
+        The fitted GLM pipeline is stored in self.models under the key model_name. 
+        Model can be accessed later for predictions using self.models[model_name].
+        """
         if self._can_fit_glm():
             #Prepare Fitting
             model_name, init_score = self._prepare_fit(X,features,model_name)
@@ -261,6 +318,26 @@ class StageMLRegressor(StageML):
             features:list,
             sample_weight = None,
             model_name:str = "gam_model"):
+        """Fits a Generalized Additive Model (GAM) on the input data.
+
+        Args:
+            X (pd.DataFrame): Input features dataframe
+            y (pd.DataFrame): Target dataframe 
+            features (list): List of feature names to use for training
+            sample_weight (pd.DataFrame): Optional weight for each sample
+            model_name (str): Name to use for the fitted model
+        
+        Returns:
+            None: Fits a GAM model internally and stores it in self.models
+
+        This method:
+            - Prepares the data by validating and generating init scores
+            - Fits a ExplainableBoostingRegressor model on X and y
+            - Stores the fitted model pipeline in self.models under model_name
+
+        The fitted model can be used for predictions and insights on important
+        features.
+        """
         #Prepare Fitting
         model_name, init_score = self._prepare_fit(X,features,model_name)
         # Fit Models
@@ -273,7 +350,6 @@ class StageMLRegressor(StageML):
         #Update Object
         self._update_model_features(model_name,features)
 
-
     def fit_ga2m(
             self,
             X:pd.DataFrame,
@@ -282,6 +358,27 @@ class StageMLRegressor(StageML):
             sample_weight = None,
             model_name:str = "ga2m_model",
             interactions = 10):
+        """Fits a Generalized Additive Interaction Model (GA2M) on the input data.
+
+        Args:
+            X (pd.DataFrame): Input features dataframe
+            y (pd.DataFrame): Target dataframe
+            features (list): List of feature names to use for training
+            sample_weight (pd.DataFrame): Optional weight for each sample 
+            model_name (str): Name to use for the fitted model
+            interactions (int): Max number of feature interactions to model
+
+        Returns:
+            None: Fits a GA2M model internally and stores it in self.models
+
+        This method:
+            - Prepares the data by validating and generating init scores
+            - Fits a ExplainableBoostingRegressor model with interactions
+            - Stores the fitted model pipeline in self.models under model_name
+
+        The fitted model can be used for predictions and insights on important
+        features and interactions.
+        """
         #Prepare Fitting
         model_name, init_score = self._prepare_fit(X,features,model_name)
         # Fit Models
@@ -300,9 +397,32 @@ class StageMLRegressor(StageML):
             self,
             X:pd.DataFrame,
             y:pd.DataFrame,
+            valid_sets:list,
             features:list,
             sample_weight = None,
             model_name:str = "lgbm_model"):
+        """Fits a LightGBM model on the input data.
+
+        Args:
+            X (pd.DataFrame): Input features dataframe
+            y (pd.DataFrame): Target dataframe
+            valid_sets (list): List of tuples (X_valid, y_valid) 
+            features (list): List of feature names to use for training
+            sample_weight (pd.DataFrame): Optional weight for each sample
+            model_name (str): Name to use for the fitted model
+
+        Returns:
+            None: Fits a LightGBM model internally and stores it in self.models
+
+        This method:
+            - Prepares the data by validating and generating init scores 
+            - Fits a LightGBMRegressor on X and y
+            - Evaluates on valid_sets during training
+            - Stores fitted model in self.models under model_name
+
+        The fitted model can be used for predictions and insights on important
+        features.
+        """
         #Prepare Fitting
         model_name, init_score = self._prepare_fit(X,features,model_name)
         # Fit Models
@@ -318,6 +438,25 @@ class StageMLRegressor(StageML):
             self,
             X:pd.DataFrame,
             model_name:str):
+        """Makes predictions on new data using a fitted model.
+
+        Args:
+            X (pd.DataFrame): New data for predictions 
+            model_name (str): Name of fitted model to use  
+
+        Returns:
+            y_pred (np.array): Array of model predictions on new data X 
+
+        This makes predictions by:
+        
+        1. Checking if the given model_name exists
+        2. Applying preprocessing and prediction steps 
+        for each stage in the model pipeline
+        3. Transforming predictions using the link function
+        4. Returning predictions when final stage is reached
+
+        The model must be fitted first before predictions can be made.
+        """
         if self._model_exists(model_name):
             score = np.zeros(X.shape[0])
             for item in self.model_stages:

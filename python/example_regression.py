@@ -47,17 +47,50 @@ stage_ml_regressor.fit_lgbm(
             y = y_train,
             features=features)
 
+#GAM Model
+gam_model = StageMLRegressor()
+gam_model.fit_gam(
+            X = X_train,
+            y = y_train,
+            features=features)
 
+#GBM Model
+gbm_model = StageMLRegressor()
+gbm_model.fit_lgbm(
+            X = X_train,
+            y = y_train,
+            features=features)
+
+
+################ Train ##############################
+#Staged ML
+mse(y_train, stage_ml_regressor.predict(X= X_train,model_name="glm_model"))
+mse(y_train, stage_ml_regressor.predict(X= X_train,model_name="gam_model"))
+mse(y_train, stage_ml_regressor.predict(X= X_train,model_name="ga2m_model"))
+mse(y_train, stage_ml_regressor.predict(X= X_train,model_name="lgbm_model"))
+#Comparing Staged ML
+mse(y_train, stage_ml_regressor.predict(X= X_train,model_name="gam_model"))
+mse(y_train, gam_model.predict(X= X_train,model_name="gam_model"))
+
+mse(y_train, gbm_model.predict(X= X_train,model_name="lgbm_model"))
+mse(y_train, stage_ml_regressor.predict(X= X_train,model_name="lgbm_model"))
+
+
+################ TEST ##############################
+#Staged ML
 mse(y_test, stage_ml_regressor.predict(X= X_test,model_name="glm_model"))
 mse(y_test, stage_ml_regressor.predict(X= X_test,model_name="gam_model"))
 mse(y_test, stage_ml_regressor.predict(X= X_test,model_name="ga2m_model"))
 mse(y_test, stage_ml_regressor.predict(X= X_test,model_name="lgbm_model"))
+#Comparing Staged ML
+mse(y_test, stage_ml_regressor.predict(X= X_test,model_name="gam_model"))
+mse(y_test, gam_model.predict(X= X_test,model_name="gam_model"))
 
-gam_model = StageMLRegressor()
-gam_model.fit_ga2m(
-            X = X_train,
-            y = y_train,
-            features=features)
+mse(y_test, gbm_model.predict(X= X_test,model_name="lgbm_model"))
+mse(y_test, stage_ml_regressor.predict(X= X_test,model_name="lgbm_model"))
+
+
+
 #Testing
 mse(y_test, stage_ml_regressor.predict(X= X_test,model_name="gam_model"))
 mse(y_test, gam_model.predict(X= X_test,model_name="gam_model"))
