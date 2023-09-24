@@ -210,6 +210,40 @@ class StageMLRegressor(StageML):
         self.objective = objective
         self._objective_handler()
 
+    def _calc_score(
+            self,
+            X:pd.DataFrame,
+            model_name:str):
+        """Makes predictions on new data using a fitted model.
+
+        Args:
+            X (pd.DataFrame): New data for predictions 
+            model_name (str): Name of fitted model to use  
+
+        Returns:
+            y_pred (np.array): Array of model predictions on new data X 
+
+        This makes predictions by:
+        
+        1. Checking if the given model_name exists
+        2. Applying preprocessing and prediction steps 
+        for each stage in the model pipeline
+        3. Transforming predictions using the link function
+        4. Returning predictions when final stage is reached
+
+        The model must be fitted first before predictions can be made.
+        """
+        if self._model_exists(model_name):
+            score = np.zeros(X.shape[0])
+            for item in self.model_stages:
+                # print(item)
+                score += self.link(self.models[item].predict(X[self.features[item]]))
+                if item == model_name:
+                    return (score)
+        else:
+            print("Model does not exists")
+
+
     def _prepare_init_score(self,X):
         """Prepares the initial score value for LightGBM model fitting.
 
@@ -227,13 +261,11 @@ class StageMLRegressor(StageML):
         - Sums predictions using self.link()
         - Returns summed array as init_scores
         """
-        if len(self.models) == 0:
+        if len(self.model_stages) == 0:
             init_score = None
         else:
-            init_score = np.zeros(X.shape[0] )
-            for model_name in self.model_stages:
-                # print(model_name)
-                init_score += self.link(self.models[model_name].predict(X[self.features[model_name]]))
+            model_name = self.model_stages[-1]
+            init_score = self._calc_score(X,model_name)
         return init_score
     
     def _prepare_fit(self,X,features,model_name):
@@ -263,6 +295,8 @@ class StageMLRegressor(StageML):
         #Update Model Name
         model_name = self._check_model_name(model_name)
         return model_name, init_score
+
+
 
     def fit_glm(
             self,
@@ -429,7 +463,11 @@ class StageMLRegressor(StageML):
         self.models[model_name] = LGBMRegressor(
             objective = self.objective            
             )
-        self.models[model_name].fit(X= X[features], y = y,sample_weight = sample_weight,init_score = init_score)
+        self.models[model_name].fit(
+            X= X[features], 
+            y = y,
+            sample_weight = sample_weight,
+            init_score = init_score)
         #Update Object
         self._update_model_features(model_name,features)
 
@@ -457,12 +495,5 @@ class StageMLRegressor(StageML):
 
         The model must be fitted first before predictions can be made.
         """
-        if self._model_exists(model_name):
-            score = np.zeros(X.shape[0])
-            for item in self.model_stages:
-                # print(item)
-                score += self.link(self.models[item].predict(X[self.features[item]]))
-                if item == model_name:
-                    return self.inv_link(score)
-        else:
-            print("Model does not exists")
+        score = self._calc_score(X,model_name)
+        return self.inv_link(score)
