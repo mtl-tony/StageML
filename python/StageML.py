@@ -25,7 +25,7 @@ from sklearn.linear_model import PoissonRegressor, TweedieRegressor, LinearRegre
 from sklearn.ensemble import GradientBoostingClassifier # GBM 
 from sklearn.compose import make_column_transformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.pipeline import make_pipeline
+from sklearn.pipeline import make_pipeline, Pipeline
 # Explainable Boosting Machines
 from interpret.glassbox import ExplainableBoostingClassifier,ExplainableBoostingRegressor # EBM
 # Gradient Boosting Machine
@@ -35,7 +35,7 @@ from catboost import CatBoostClassifier,CatBoostRegressor
 
 # Ignoring warnings
 from abc import ABC, abstractmethod
-from utils.inv_link import inv_log, inv_identity, inv_logistic
+from utils.inv_link import inv_log, inv_identity, inv_logistic,link_identity,link_log,link_logistic
 
 
 
@@ -72,12 +72,10 @@ class StageML:
     """
     def __init__(
         self, 
-        feature_names:list,
         n_jobs: Optional[int] = -2,
         feature_types = None,
         random_state = 42):
 
-        self.feature_names = feature_names
         self.feature_types = feature_types
         self.n_jobs = n_jobs
         self.random_state = random_state
@@ -92,6 +90,9 @@ class StageML:
             raise Exception("Missing columns: {}".format(list(missing_cols)))
         else:
             print("All required columns present")
+
+    def _model_exists(self, model_name):
+        return model_name in self.model_stages
 
     def _check_model_name(self,model_name):
         index = 0
@@ -108,15 +109,23 @@ class StageML:
             case "rmse":
                 self.linear_model = LinearRegression()
                 self.inv_link = inv_identity
+                self.ebm_objective = "rmse"
+                self.link = link_identity
             case "poisson":
                 self.linear_model = PoissonRegressor()
                 self.inv_link = inv_log
+                self.ebm_objective = "poisson_deviance"
+                self.link = link_log
             case "gamma":
                 self.linear_model = TweedieRegressor(power = 1, link = "log")
                 self.inv_link = inv_log
+                self.ebm_objective = "gamma_deviance"
+                self.link = link_log
             case "logloss":
                 self.linear_model = LogisticRegression()
                 self.inv_link = inv_logistic
+                self.ebm_objective = "log_loss"
+                self.link = link_logistic
 
     def _can_fit_glm(self):
         #Can only fit if it's first model
@@ -126,7 +135,10 @@ class StageML:
         categorical_features = X.select_dtypes(include=['object', 'category']).columns.tolist()
         numeric_features = X.select_dtypes(include=['int64', 'float64']).columns.tolist()
         return numeric_features, categorical_features
-
+    
+    def _update_model_features(self,model_name,features):
+        self.features[model_name] = features
+        self.model_stages = self.model_stages + [model_name]
     @abstractmethod
     def fit_glm():
         pass
@@ -181,14 +193,12 @@ class StageMLRegressor(StageML):
     """
     def __init__(
         self, 
-        feature_names:list,
         n_jobs: Optional[int] = -2,
         objective : str = "rmse",
         feature_types = None,
         random_state = 42):
 
         super().__init__(
-            feature_names = feature_names,
             n_jobs = n_jobs,
             feature_types = feature_types,
             random_state = random_state)
@@ -202,7 +212,8 @@ class StageMLRegressor(StageML):
         else:
             init_score = np.zeros(X.shape[0] )
             for model_name in self.model_stages:
-                init_score += self.inv_link(self.models[model_name].predict(X[self.features[model_name]]))
+                # print(model_name)
+                init_score += self.link(self.models[model_name].predict(X[self.features[model_name]]))
         return init_score
     
     def _prepare_fit(self,X,features,model_name):
@@ -234,10 +245,12 @@ class StageMLRegressor(StageML):
             )
             # Create pipeline with preprocessor and model
 
-            self.models[model_name] = make_pipeline(preprocessor, deepcopy(self.linear_model))
-            self.models[model_name].fit(X = X[features],y = y,sample_weight = sample_weight)
-            self.features[model_name] = X.columns.tolist()
-            self.model_stages = self.model_stages + [model_name]
+            self.models[model_name] = Pipeline([
+                ("preprocessor",preprocessor), 
+                ("linearmodel",deepcopy(self.linear_model))])
+            #Fit Model
+            self.models[model_name].fit(X = X[features],y = y,linearmodel__sample_weight = sample_weight)
+            self._update_model_features(model_name,features)
         else:
             print("Not Fitting GLM. No init_score Parameter for this model, can only be first model fit")
 
@@ -254,12 +267,12 @@ class StageMLRegressor(StageML):
         self.models[model_name] = ExplainableBoostingRegressor(
             max_bins=52,
             interactions = 0,
-            objective = self.objective
+            objective = self.ebm_objective
             )
         self.models[model_name].fit(X= X[features], y = y,sample_weight = sample_weight,init_score = init_score)
         #Update Object
-        self.features = X.columns.tolist()
-        self.model_stages = self.model_stages + [model_name]
+        self._update_model_features(model_name,features)
+
 
     def fit_ga2m(
             self,
@@ -275,13 +288,13 @@ class StageMLRegressor(StageML):
         self.models[model_name] = ExplainableBoostingRegressor(
             max_interaction_bins=10,
             interactions = interactions,
-            objective = self.objective,
+            objective = self.ebm_objective,
             exclude = list(range(len(features)))
             )
         self.models[model_name].fit(X= X[features], y = y,sample_weight = sample_weight,init_score = init_score)
         #Update Object
-        self.features = X.columns.tolist()
-        self.model_stages = self.model_stages + [model_name]
+        self._update_model_features(model_name,features)
+
 
     def fit_lgbm(
             self,
@@ -298,5 +311,19 @@ class StageMLRegressor(StageML):
             )
         self.models[model_name].fit(X= X[features], y = y,sample_weight = sample_weight,init_score = init_score)
         #Update Object
-        self.features = X.columns.tolist()
-        self.model_stages = self.model_stages + [model_name]
+        self._update_model_features(model_name,features)
+
+
+    def predict(
+            self,
+            X:pd.DataFrame,
+            model_name:str):
+        if self._model_exists(model_name):
+            score = np.zeros(X.shape[0])
+            for item in self.model_stages:
+                # print(item)
+                score += self.link(self.models[item].predict(X[self.features[item]]))
+                if item == model_name:
+                    return self.inv_link(score)
+        else:
+            print("Model does not exists")
